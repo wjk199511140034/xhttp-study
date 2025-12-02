@@ -67,6 +67,6 @@ downloadSettings 指的不是“服务器监听端口”，而是：<br>
 而服务端“回落到 6666”只是 Reality inbound 的内部路由转发逻辑，不是客户端用的配置。<br>
 有官方／项目文档明确写“fallback inbound must be <a href="https://xtls.github.io/config/features/fallback.html?utm_source=chatgpt.com#fallbacks-%E9%85%8D%E7%BD%AE">TCP+TLS</a><br>
 也就是说，不用tcp+tls将无法成功回落，而Reality 本质是一种 TLS，实现为 TCP + TLS record-like 数据结构<br>
-还有一种玩法是给一个vps绑定两个域名/二级域名，一个上行，一个下行，无需回落，只需要在客户端上行的节点加上对应的downloadSettings，指向另有一个域名，即可实现上下行分离，最好是有两个域名，且绑定了两个IP的vps使用<br>
-否则，GFW看到a.1995.com上行，b.1995.com下行，这不自找麻烦？尤其是a.1995.com和b.1995.com都指向同一个IP，更加明显，有两个IP的话，1995.com->IP1，33yy.com->IP2，这样才能掩藏在茫茫网络流量之中<br>
+还有一种玩法是给一个vps绑定两个域名，一个上行过CDN，一个下行直连，无需回落，只需要在客户端上行的节点加上对应的downloadSettings指向另有一个域名，即可实现上下行分离，最好不要用a.1995.xyz和b.1995.xyz这种，最好是两个完全不同的域名，或者是绑定了两个IP的vps用上下行分离<br>
+否则，GFW看到a.1995.com上行，b.1995.com下行，这不自找麻烦？尤其是a.1995.com和b.1995.com都指向同一个IP，更加明显，有两个IP的话，1995.com->IP1，33yy.com->IP2，过CDN的话，1995.com->CF‘s IP，33yy.com->VPS's IP这样才能掩藏在茫茫网络流量之中<br>
 <br>
