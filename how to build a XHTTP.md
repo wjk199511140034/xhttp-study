@@ -293,13 +293,14 @@ vless+xhttp ，port:50003，path:/8e87b868<br>
 ]
 ```
 <br>
-我测试了mKCP和xhttp回落不会成功，因为官方写了[回落只能用于 TCP+TLS 传输组合](https://xtls.github.io/config/features/fallback.html#fallbacks-%E9%85%8D%E7%BD%AE)，但是TCP+Reality和纯TCP居然也能成功回落？<br>
+
+我测试了mKCP和xhttp回落不会成功，因为官方写了[回落只能用于TCP+TLS传输组合](https://xtls.github.io/config/features/fallback.html)，但是TCP+Reality和纯TCP居然也能成功回落？<br>
 根据我的推测，不敲代码，纯web-ui操作的话<br>
 如果端口复用（上下行同一个端口），上下行协议必须完全一致，只能实现：
-<br>
-| 上行                 |                                  下行|通断                          |
+
+| 上行                 |         下行|通断                          |
 | ---------------- | :--------------------------: | :---------------------:|
-| xhttp+reality    | xhttp+reality | ✔| 
+| xhttp+reality    | xhttp+reality | ✔|
 | xhttp+tls          | xhttp+tls       | ✔| 
 | xhttp                | xhttp             | ✔| 
 <br>
@@ -308,15 +309,15 @@ vless+xhttp ，port:50003，path:/8e87b868<br>
 你可能会问这么做的意义是什么是呢？其实xhttp+tls和纯xhttp是可以过cdn的，你可以上下行优选不同的ip，以达到最低的延迟<br>
 <br>
 如果使用tcp的fallback，可以使上下行走在不同端口，但由于下行连接限定只能用tcp，所以只能是（理论上）：
-<br>
+
 | 上行                |                          下行|通断                          |
 | --------------- | :---------------------: | :---------------------:|
 | xhttp+reality  | tcp+reality(fallback) | ❌unexpected EOF | 
 | xhttp+tls        | tcp+reality(fallback) | ❌unexpected EOF | 
-| xhttp              | tcp+reality(fallback) | ✔| 
+| xhttp              | tcp+reality(fallback) | ✔| <br>
 | xhttp+reality  | tcp+tls(fallback)       | ❌unexpected EOF | 
 | xhttp+tls        | tcp+tls(fallback)       | ❌unexpected EOF | 
-| xhttp              | tcp+tls(fallback)       | ✔| 
+| xhttp              | tcp+tls(fallback)       | ✔| <br>
 | xhttp+reality  | tcp(fallback)             | ❌unexpected EOF | 
 | xhttp+tls        | tcp(fallback)             | ❌unexpected EOF | 
 | xhttp              | tcp(fallback)             | ✔| 
@@ -331,6 +332,7 @@ vless+xhttp ，port:50003，path:/8e87b868<br>
 以下是上行xhttp+tls的log，上行使用reality时log也一样<br>
 可以看到客户端已经和ipv4 ipv6都握手了，最后不知道为何跳一个unexpected EOF<br>
 <br>
+
 ```
 2025/12/05 15:40:08.904103 [Warning] core: Xray 25.12.2 started 
 2025/12/05 15:40:09.976143 [Info] [2274171885] proxy/socks: TCP Connect request to tcp:www.google.com:443 
@@ -346,7 +348,8 @@ vless+xhttp ，port:50003，path:/8e87b868<br>
 2025/12/05 15:40:10 测试完成
 ```
 <br>
-上行xhttp的log<br>
+上行xhttp的log
+
 ```
 2025/12/05 16:04:18.209989 [Warning] core: Xray 25.12.2 started
 2025/12/05 16:04:19.286191 [Info] [3503482820] proxy/socks: TCP Connect request to tcp:www.google.com:443
