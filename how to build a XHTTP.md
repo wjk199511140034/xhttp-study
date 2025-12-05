@@ -255,3 +255,112 @@ vless+xhttp ，port:50003，path:/8e87b868<br>
 9.同样的，你可以将上下行调换，实现上行直连vless+xhttp+tls，下行vless+xhttp+tls+cdn<br>
 看到这应该可以基本掌握了xhttp上下行分离的操作和原理了，并且可以使用web-ui和gui尝试着去配置自己的xhttp了<br>
 以后就可以去探索R主席说的各种姿势了，，，，<br>
+### some note
+个人理解笔记，大佬请忽略，理解不一定对，纯属个人瞎猜：<br>
+首先上行需要设置成xhttp，然后只需要在客户端填入一段extra就可以完成上下行分离操作<br>
+一开始的三段代码其实离成功只有一步，因为我json写的有语法错误，最后一行参数后面不能加逗号<br>
+但是马虎的我一开始没有发现，导致downloadSettings根本没有生效，所以一开始写了Extra虽然能跑，但是一直走上行的ipv6，相当于没有写Extra<br>
+<br>
+上下行分离的逻辑：虽然这很反直觉，但是上下行分离不是服务端决定的，它是由客户端决定的，即客户端检测到了extra:{downloadSettings}，要先测试下行连接通断，然后他和下行进行一些列复杂的沟通，再去上行通讯<br>
+
+在一开始的尝试中，如果上下行协议完全相同，只是想上下行走不同ip或上下行单边过cdn，那么完全可以使用同一个端口，即上下行端口复用(废话，本来就是用同一个端口)<br>
+如果上下行协议不相同，比如上行xhttp，下行xhttp+reality，那么就需要用到tcp特有的回落<br>
+
+可以看一下大佬的操作[#4118](https://github.com/XTLS/Xray-core/discussions/4118)，reality是前置inbound，fallback都丢到`/dev/shm/xhttp_client_upload.sock`，然后xhttp再监听`/dev/shm/xhttp_client_upload.sock`，而且xhttp里面也没有写tls，tls是通过Nginx实现的<br>
+``` 
+ "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+       "streamSettings": {
+          "network": "raw",
+          "security": "reality",
+         }
+        "fallbacks": [
+          {
+            "dest": "/dev/shm/xhttp_client_upload.sock",
+          }
+        ]
+      }
+     {
+     "listen": "/dev/shm/xhttp_client_upload.sock,0666",
+      "protocol": "vless",
+      "streamSettings": {
+        "network": "xhttp",
+      }
+     }
+]
+```
+<br>
+我测试了mKCP和xhttp回落不会成功，因为官方写了[回落只能用于 TCP+TLS 传输组合](https://xtls.github.io/config/features/fallback.html#fallbacks-%E9%85%8D%E7%BD%AE)，但是TCP+Reality和纯TCP居然也能成功回落？<br>
+根据我的推测，不敲代码，纯web-ui操作的话<br>
+如果端口复用（上下行同一个端口），上下行协议必须完全一致，只能实现：
+<br>
+| 上行                 |                                  下行|通断                          |
+| ---------------- | :--------------------------: | :---------------------:|
+| xhttp+reality    | xhttp+reality | ✔| 
+| xhttp+tls          | xhttp+tls       | ✔| 
+| xhttp                | xhttp             | ✔| 
+<br>
+当然，上下行虽然协议必须一致，但是可用不同的ip(双栈ip和多ip的vps)，或者上下行不同域名<br>
+<br>
+你可能会问这么做的意义是什么是呢？其实xhttp+tls和纯xhttp是可以过cdn的，你可以上下行优选不同的ip，以达到最低的延迟<br>
+<br>
+如果使用tcp的fallback，可以使上下行走在不同端口，但由于下行连接限定只能用tcp，所以只能是（理论上）：
+<br>
+| 上行                |                          下行|通断                          |
+| --------------- | :---------------------: | :---------------------:|
+| xhttp+reality  | tcp+reality(fallback) | ❌unexpected EOF | 
+| xhttp+tls        | tcp+reality(fallback) | ❌unexpected EOF | 
+| xhttp              | tcp+reality(fallback) | ✔| 
+| xhttp+reality  | tcp+tls(fallback)       | ❌unexpected EOF | 
+| xhttp+tls        | tcp+tls(fallback)       | ❌unexpected EOF | 
+| xhttp              | tcp+tls(fallback)       | ✔| 
+| xhttp+reality  | tcp(fallback)             | ❌unexpected EOF | 
+| xhttp+tls        | tcp(fallback)             | ❌unexpected EOF | 
+| xhttp              | tcp(fallback)             | ✔| 
+
+<br>
+可以在此基础上，尝试去更改上下行的ip，域名，或者尝试去过cdn实现加速等等<br>
+更复杂更高级的玩法可能需要Nginx前置回落，或者直接手搓json了吧。。。。总之小白的纯ui玩xhttp到这里也该结束了<br>
+<br>
+<br>
+不过呢，由上表可以看到，只有上行xhttp时可以生效，这是为什么呢？<br>
+<br>
+以下是上行xhttp+tls的log，上行使用reality时log也一样<br>
+可以看到客户端已经和ipv4 ipv6都握手了，最后不知道为何跳一个unexpected EOF<br>
+<br>
+```
+2025/12/05 15:40:08.904103 [Warning] core: Xray 25.12.2 started 
+2025/12/05 15:40:09.976143 [Info] [2274171885] proxy/socks: TCP Connect request to tcp:www.google.com:443 
+2025/12/05 15:40:09.976143 [Info] [2274171885] app/dispatcher: taking detour [proxy10830] for [tcp:www.google.com:443] 
+2025/12/05 15:40:09.976143 from tcp:127.0.0.1:3378 accepted tcp:www.google.com:443 [mixed10830 -> proxy10830] 
+2025/12/05 15:40:09.976143 [Debug] [2274171885] transport/internet/splithttp: XMUX: creating xmuxClient because xmuxClients is empty 2025/12/05 15:40:09.976143 [Info] [2274171885] transport/internet/splithttp: XHTTP is dialing to tcp:[**my ipv6**]:5001, mode packet-up, HTTP version 2, host a.1995.xyz 
+2025/12/05 15:40:09.976143 [Debug] [2274171885] transport/internet/splithttp: XMUX: creating xmuxClient because xmuxClients is empty 
+2025/12/05 15:40:09.976143 [Info] [2274171885] transport/internet/splithttp: XHTTP is downloading from tcp:[**my ipv4**]:5002, mode stream-down, HTTP version 2, host mofumofu.me 
+2025/12/05 15:40:09.976692 [Debug] [2274171885] transport/internet: dialing to tcp:[**my ipv4**]:5002 
+2025/12/05 15:40:10.546195 [Info] [2274171885] proxy/vless/outbound: tunneling request to tcp:www.google.com:443 via [**my ipv6**]:5001 
+2025/12/05 15:40:10.546702 [Debug] [2274171885] transport/internet: dialing to tcp:[**my ipv6**]:50301 
+2025/12/05 15:40:10.730552 [Info] [2274171885] transport/internet/splithttp: failed to GET https://mofumofu.me/ad1aa914/c2575b26-17dc-4f83-8920-78cad1477788 > Get "https://mofumofu.me/ad1aa914/c2575b26-17dc-4f83-8920-78cad1477788": unexpected EOF 
+2025/12/05 15:40:10 测试完成
+```
+<br>
+上行xhttp的log<br>
+```
+2025/12/05 16:04:18.209989 [Warning] core: Xray 25.12.2 started
+2025/12/05 16:04:19.286191 [Info] [3503482820] proxy/socks: TCP Connect request to tcp:www.google.com:443
+2025/12/05 16:04:19.286191 [Info] [3503482820] app/dispatcher: taking detour [proxy10829] for [tcp:www.google.com:443]
+2025/12/05 16:04:19.286191 from tcp:127.0.0.1:3948 accepted tcp:www.google.com:443 [mixed10829 -> proxy10829]
+2025/12/05 16:04:19.286191 [Debug] [3503482820] transport/internet/splithttp: XMUX: creating xmuxClient because xmuxClients is empty
+2025/12/05 16:04:19.286191 [Info] [3503482820] transport/internet/splithttp: XHTTP is dialing to tcp:[**my ipv6**]:5001, mode packet-up, HTTP version 1.1, host ch2.19951115.xyz
+2025/12/05 16:04:19.286191 [Debug] [3503482820] transport/internet/splithttp: XMUX: creating xmuxClient because xmuxClients is empty
+2025/12/05 16:04:19.286191 [Info] [3503482820] transport/internet/splithttp: XHTTP is downloading from tcp:[**my ipv4**]:5002, mode stream-down, HTTP version 2, host mofumofu.me
+2025/12/05 16:04:19.286191 [Debug] [3503482820] transport/internet: dialing to tcp:[**my ipv4**]:5002
+2025/12/05 16:04:19.501544 [Info] [3503482820] proxy/vless/outbound: tunneling request to tcp:www.google.com:443 via [**my ipv6**]:5001
+2025/12/05 16:04:19.502346 [Debug] [3503482820] transport/internet: dialing to tcp:[**my ipv6**]:5001
+2025/12/05 16:04:19.820136 [Debug] [3503482820] transport/internet: dialing to tcp:[**my ipv6**]:5001
+2025/12/05 16:04:19.850559 [Debug] [3503482820] transport/internet: dialing to tcp:[**my ipv6**]:5001
+2025/12/05 16:04:20 测试完成
+```
+<br>
